@@ -148,10 +148,12 @@ async def processar_arquivamento(bot: discord.Client, interaction: discord.Inter
         file.filename = f"video_{i}_{clean_name}"
         files.append(file)
 
-    await channel.send(
-        embeds=embeds,
-        files=files if files else None
-    )
+    # Discord coloca anexos acima de embeds na mesma mensagem.
+    # Enviamos os vídeos como uma resposta à mensagem do embed para ficarem abaixo.
+    msg_embed = await channel.send(embeds=embeds)
+
+    if files:
+        await channel.send(content="🎥 **Vídeo(s) da Prova:**", files=files, reference=msg_embed)
 
     sucesso = discord.Embed(
         title='REGISTRO CONCLUIDO',
