@@ -28,6 +28,10 @@ class MyBot(commands.Bot):
         print(f"Comandos slash sincronizados para {self.user}")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        # Ignorar erros de interação desconhecida (geralmente timeout ou já respondida)
+        if isinstance(error, discord.NotFound) and error.code == 10062:
+            return
+
         if isinstance(error, app_commands.CheckFailure):
             # Extraindo a original exception se estiver dentro de um CheckFailure
             original_error = getattr(error, 'original', error)
@@ -41,26 +45,36 @@ class MyBot(commands.Bot):
                     color=0xe74c3c
                 )
                 
-                if interaction.response.is_done():
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                else:
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                    else:
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+                except Exception:
+                    pass
                 return
             else:
                 # É um CheckFailure diferente
                 msg = f"⛔ {str(error)}"
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(msg, ephemeral=True)
-                else:
-                    await interaction.followup.send(msg, ephemeral=True)
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(msg, ephemeral=True)
+                    else:
+                        await interaction.followup.send(msg, ephemeral=True)
+                except Exception:
+                    pass
                 return
         
         # Erro genérico
         print(f"Erro no comando {interaction.command.name if interaction.command else 'desconhecido'}: {error}")
-        if not interaction.response.is_done():
-            await interaction.response.send_message(f"Ocorreu um erro ao processar o comando. Tente novamente.", ephemeral=True)
-        else:
-            await interaction.followup.send(f"Ocorreu um erro ao processar o comando. Tente novamente.", ephemeral=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Ocorreu um erro ao processar o comando. Tente novamente.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"Ocorreu um erro ao processar o comando. Tente novamente.", ephemeral=True)
+        except Exception:
+            # Se falhar ao enviar a resposta (ex: interação expirada), apenas logamos
+            pass
 
 bot = MyBot()
 

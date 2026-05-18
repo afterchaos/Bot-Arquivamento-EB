@@ -12,6 +12,7 @@ ADMIN_IDS = [1248667147635396662, 643244640937443338]
 class PermissionsManager:
     def __init__(self):
         self.file_path = PERMISSIONS_FILE
+        self._cache = None
         self._ensure_file()
 
     def _ensure_file(self):
@@ -20,13 +21,25 @@ class PermissionsManager:
                 json.dump({}, f)
 
     def _read_data(self):
+        if self._cache is not None:
+            return self._cache
+            
         try:
+            if not os.path.exists(self.file_path):
+                self._cache = {}
+                return self._cache
+                
             with open(self.file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                self._cache = json.load(f)
+                return self._cache
         except json.JSONDecodeError:
+            self._cache = {}
+            return self._cache
+        except Exception:
             return {}
 
     def _write_data(self, data):
+        self._cache = data
         with open(self.file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
 

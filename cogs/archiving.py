@@ -16,6 +16,7 @@ class EditModal(discord.ui.Modal):
         # Preenche os valores a partir do embed atual
         current_nick = ""
         current_motivo = ""
+        current_link = ""
         embed = self.message.embeds[0]
         
         for field in embed.fields:
@@ -24,7 +25,9 @@ class EditModal(discord.ui.Modal):
                 if ']' in current_nick: # Remove [Patente] se estiver presente
                     current_nick = current_nick.split(']')[-1].strip()
             elif 'Motivo' in field.name:
-                current_motivo = field.value.replace('```', '')
+                current_motivo += field.value.replace('```', '')
+            elif 'Link' in field.name:
+                current_link = field.value
 
         self.nick_input = discord.ui.TextInput(
             label="Novo(s) Nick(s)",
@@ -38,9 +41,16 @@ class EditModal(discord.ui.Modal):
             style=discord.TextStyle.paragraph,
             required=True
         )
+        self.link_input = discord.ui.TextInput(
+            label="Link da Prova (Opcional)",
+            default=current_link,
+            placeholder="https://...",
+            required=False
+        )
         
         self.add_item(self.nick_input)
         self.add_item(self.motivo_input)
+        self.add_item(self.link_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -53,20 +63,34 @@ class EditModal(discord.ui.Modal):
         
         # Atualiza os campos apenas no embed principal
         found_nick = False
-        found_motivo = False
         
-        for i, field in enumerate(main_embed.fields):
+        novos_fields = []
+        for field in main_embed.fields:
             if 'Usuario' in field.name or 'Usuário' in field.name or 'Militar' in field.name:
-                main_embed.set_field_at(i, name=field.name, value=f'```{self.nick_input.value}```', inline=field.inline)
+                novos_fields.append({'name': field.name, 'value': f'```{self.nick_input.value}```', 'inline': field.inline})
                 found_nick = True
-            elif 'Motivo' in field.name:
-                main_embed.set_field_at(i, name=field.name, value=f'```{self.motivo_input.value}```', inline=field.inline)
-                found_motivo = True
+            elif 'Motivo' not in field.name and 'Link' not in field.name:
+                novos_fields.append({'name': field.name, 'value': field.value, 'inline': field.inline})
 
         if not found_nick:
-            main_embed.insert_field_at(0, name='👤 Usuario(s) (Roblox)', value=f'```{self.nick_input.value}```', inline=True)
-        if not found_motivo:
-            main_embed.add_field(name='📝 Motivo', value=f'```{self.motivo_input.value}```', inline=False)
+            novos_fields.insert(0, {'name': '👤 Usuario(s) (Roblox)', 'value': f'```{self.nick_input.value}```', 'inline': True})
+
+        main_embed.clear_fields()
+        for f in novos_fields:
+            main_embed.add_field(name=f['name'], value=f['value'], inline=f['inline'])
+
+        # Adiciona o novo motivo particionado
+        limite = 1000
+        novo_motivo = self.motivo_input.value
+        partes_motivo = [novo_motivo[i:i+limite] for i in range(0, len(novo_motivo), limite)]
+        
+        for i, parte in enumerate(partes_motivo):
+            nome_field = '📝 Motivo' if i == 0 else f'📝 Motivo (Parte {i+1})'
+            main_embed.add_field(name=nome_field, value=f'```{parte}```', inline=False)
+
+        if self.link_input.value:
+            main_embed.add_field(name='🔗 Link da Prova', value=self.link_input.value, inline=False)
+
         await self.message.edit(embeds=new_embeds)
         await interaction.followup.send(f"Registro editado com sucesso: {self.message.jump_url}", ephemeral=True)
 
@@ -78,57 +102,76 @@ class Archiving(commands.Cog):
     @require_permission("arquivar_registros")
     @app_commands.choices(patente=config.PATENTES_ESCOLHA)
     async def exilio(self, interaction: discord.Interaction, nick: str, patente: app_commands.Choice[str], responsavel: str, permissao: str, motivo: str, 
-                     img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+                     link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                      img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                      img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                      img10: Optional[discord.Attachment] = None):
-        await processar_arquivamento(self.bot, interaction, 'exilio', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        await processar_arquivamento(self.bot, interaction, 'exilio', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao, link)
 
     @app_commands.command(name="exilio_perm", description="Realiza o arquivamento de exílio permanente")
     @require_permission("arquivar_registros")
     @app_commands.choices(patente=config.PATENTES_ESCOLHA)
     async def exilio_perm(self, interaction: discord.Interaction, nick: str, patente: app_commands.Choice[str], responsavel: str, permissao: str, motivo: str, 
-                          img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+                          link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                           img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                           img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                           img10: Optional[discord.Attachment] = None):
-        await processar_arquivamento(self.bot, interaction, 'exilio_perm', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        await processar_arquivamento(self.bot, interaction, 'exilio_perm', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao, link)
 
     @app_commands.command(name="castigo", description="Realiza o arquivamento de castigo")
     @require_permission("arquivar_registros")
     @app_commands.choices(patente=config.PATENTES_ESCOLHA)
     async def castigo(self, interaction: discord.Interaction, nick: str, patente: app_commands.Choice[str], responsavel: str, permissao: str, periodo: str, motivo: str, 
-                      img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+                      link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                       img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                       img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                       img10: Optional[discord.Attachment] = None):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         dados_castigo = {
             "patente": patente.value,
             "periodo": periodo
         }
-        await processar_arquivamento(self.bot, interaction, 'castigo', nick, dados_castigo, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao)
+        await processar_arquivamento(self.bot, interaction, 'castigo', nick, dados_castigo, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao, link)
 
     @app_commands.command(name="banimento", description="Realiza o arquivamento de banimento")
     @require_permission("arquivar_registros")
     @app_commands.choices(patente=config.PATENTES_ESCOLHA)
-    async def banimento(self, interaction: discord.Interaction, nick: str, patente: app_commands.Choice[str], motivo: str, 
-                        img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+    async def banimento(self, interaction: discord.Interaction, nick: str, patente: app_commands.Choice[str], responsavel: str, permissao: str, motivo: str, 
+                        link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                         img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                         img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                         img10: Optional[discord.Attachment] = None):
-        await processar_arquivamento(self.bot, interaction, 'banimento', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10))
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        await processar_arquivamento(self.bot, interaction, 'banimento', nick, patente.value, motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), responsavel, permissao, link)
 
     @app_commands.command(name="rebaixamento", description="Realiza o arquivamento de rebaixamento")
     @require_permission("arquivar_registros")
     @app_commands.choices(patente_antiga=config.PATENTES_ESCOLHA, patente_nova=config.PATENTES_ESCOLHA)
     async def rebaixamento(self, interaction: discord.Interaction, nick: str, patente_antiga: app_commands.Choice[str], patente_nova: app_commands.Choice[str], motivo: str, 
-                        img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+                        link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                         img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                         img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                         img10: Optional[discord.Attachment] = None):
-
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         if patente_antiga.value not in config.HIERARQUIA_PATENTES or patente_nova.value not in config.HIERARQUIA_PATENTES:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "❌ Erro interno: patente não configurada na hierarquia.",
                 ephemeral=True
             )
@@ -137,20 +180,24 @@ class Archiving(commands.Cog):
         valor_nova = config.HIERARQUIA_PATENTES[patente_nova.value]
 
         if valor_nova >= valor_antiga:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 f"❌ Rebaixamento inválido: `{patente_nova.value}` não é inferior a `{patente_antiga.value}`.",
                 ephemeral=True
             )                
-        await processar_arquivamento(self.bot, interaction, 'rebaixamento', nick, f"[{patente_antiga.value}] → [{patente_nova.value}]", motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10))
+        await processar_arquivamento(self.bot, interaction, 'rebaixamento', nick, f"[{patente_antiga.value}] → [{patente_nova.value}]", motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), link=link)
 
     @app_commands.command(name="relacionamento", description="Realiza o arquivamento de relacionamento (2 pessoas)")
     @require_permission("arquivar_registros")
     async def relacionamento(self, interaction: discord.Interaction, nick1: str, nick2: str, motivo: str, 
-                             img1: discord.Attachment, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
+                             link: Optional[str] = None, img1: Optional[discord.Attachment] = None, img2: Optional[discord.Attachment] = None, img3: Optional[discord.Attachment] = None, 
                              img4: Optional[discord.Attachment] = None, img5: Optional[discord.Attachment] = None, img6: Optional[discord.Attachment] = None, 
                              img7: Optional[discord.Attachment] = None, img8: Optional[discord.Attachment] = None, img9: Optional[discord.Attachment] = None, 
                              img10: Optional[discord.Attachment] = None):
-        await processar_arquivamento(self.bot, interaction, 'relacionamento', f"{nick1} & {nick2}", "N/A", motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10))
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+        await processar_arquivamento(self.bot, interaction, 'relacionamento', f"{nick1} & {nick2}", "N/A", motivo, collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10), link=link)
 
     @app_commands.command(name="afastamento", description="Realiza o arquivamento de afastamento")
     @require_permission("arquivar_registros")
@@ -165,7 +212,8 @@ class Archiving(commands.Cog):
         resp_aprovacao: str,
         link_ticket: str,
         motivo: str,
-        img1: discord.Attachment,
+        link: Optional[str] = None,
+        img1: Optional[discord.Attachment] = None,
         img2: Optional[discord.Attachment] = None,
         img3: Optional[discord.Attachment] = None,
         img4: Optional[discord.Attachment] = None,
@@ -176,6 +224,10 @@ class Archiving(commands.Cog):
         img9: Optional[discord.Attachment] = None,
         img10: Optional[discord.Attachment] = None
     ):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         dados_afastamento = {
             "militar": militar,
             "patente": patente.value,
@@ -192,7 +244,8 @@ class Archiving(commands.Cog):
             militar,
             dados_afastamento,
             motivo,
-            collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10)
+            collect_images(img1, img2, img3, img4, img5, img6, img7, img8, img9, img10),
+            link=link
         )
 
     @app_commands.command(name="editar_registro", description="Abre o painel para editar um registro existente")
